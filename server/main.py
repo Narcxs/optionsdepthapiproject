@@ -2,10 +2,12 @@
 
     uvicorn server.main:app --host 127.0.0.1 --port 8000
 
-Every route below `/health` requires the `X-API-Key` header (checked
-against `OD_API_KEY`, see `server/config.py`). The data itself comes
-straight from `data/od.db`, read-only — this process never writes to
-the archive, the scraper (`python main.py`) is the only writer.
+Every route below `/health` requires `Authorization: Bearer <token>`, a
+short-lived JWT minted by `tools/generate_token.py` and checked against
+`OD_JWT_SECRET` (see `server/auth.py`, `server/config.py`). The data
+itself comes straight from `data/od.db`, read-only — this process never
+writes to the archive, the scraper (`python main.py`) is the only
+writer.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 import store as store_module  # noqa: E402
 
-from server.auth import require_api_key  # noqa: E402
+from server.auth import require_bearer_token  # noqa: E402
 from server.config import settings  # noqa: E402
 from server.db import connection_dependency  # noqa: E402
 from server.queries import SeriesNotFound, latest_series  # noqa: E402
@@ -38,7 +40,7 @@ app = FastAPI(
 )
 
 Connection = Annotated[sqlite3.Connection, Depends(connection_dependency)]
-Authorized = Depends(require_api_key)
+Authorized = Depends(require_bearer_token)
 
 
 @app.get("/health")

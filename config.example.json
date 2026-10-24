@@ -1,0 +1,66 @@
+{
+    "url_od": "https://app.optionsdepth.com/sign-in",
+    "email_od": "your-email@example.com",
+    "password_od": "your-password",
+    "backend": "https://backend.optionsdepth.com",
+    "pages": {
+        "Volatility": {
+            "url": "https://app.optionsdepth.com/iv-depth?tab=vol-table",
+            "targets": [
+                "/api/v1/volatility/table/"
+            ],
+            "next": true,
+            "active": false
+        },
+        "Surface": {
+            "url": "https://app.optionsdepth.com/iv-depth?tab=3d-surface",
+            "targets": [
+                "/api/v1/volatility/3d-surface/",
+                "/api/v1/volatility/3d-surface/term-structure/",
+                "/api/v1/volatility/3d-surface/companion/"
+            ],
+            "next": true,
+            "active": false
+        }
+    },
+    "dashboard": {
+        "Breakdown_By_Strike": {
+            "name": "Strikes",
+            "active": false,
+            "targets": [
+                "/api/v1/charts/breakdown-by-strike/"
+            ]
+        },
+        "Breakdown_By_Strike_All": {
+            "name": "StrikeAll",
+            "active": false,
+            "targets": [
+                "/api/v1/charts/breakdown-by-strike/"
+            ]
+        },
+        "Expiration_By_Strike": {
+            "name": "Expirations",
+            "active": false,
+            "targets": [
+                "/api/v1/charts/breakdown-by-expiration/"
+            ]
+        },
+        "Heatmaps": {
+            "name": "Heatmaps",
+            "active": false,
+            "targets": [
+                "/api/v1/charts/plotly-charm/",
+                "/api/v1/charts/plotly-vanna/",
+                "/api/v1/charts/plotly-gamma/",
+                "/api/v1/charts/plotly-candlesticks/"
+            ]
+        },
+        "DepthView": {
+            "name": "DepthViews",
+            "active": false,
+            "targets": [
+                "/api/v1/charts/depth-view-table/"
+            ]
+        }
+    }
+}

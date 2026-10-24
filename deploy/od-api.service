@@ -1,0 +1,19 @@
+[Unit]
+Description=OptionsDepth Data API
+After=network.target
+
+[Service]
+Type=simple
+User=odapi
+Group=odapi
+WorkingDirectory=/opt/od-scraper
+EnvironmentFile=/opt/od-scraper/.env
+ExecStart=/opt/od-scraper/.venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/od-scraper/data
+
+[Install]
+WantedBy=multi-user.target

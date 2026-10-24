@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+
+# Real secrets: never committed. Copy config.example.json -> config.json
+# and .env.example -> .env, then fill in the real values.
+.env
+config.json
+
+browser_profiles/
+
+data/
+!data/.gitkeep
+
+*.db
+*.db-wal
+*.db-shm

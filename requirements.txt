@@ -3,3 +3,8 @@ cryptography>=46,<49
 fastapi>=0.143,<1
 uvicorn>=0.54,<1
 PyJWT>=2.15,<3
+
+# Windows has no system IANA timezone database (unlike Linux/macOS), so
+# zoneinfo.ZoneInfo() raises ZoneInfoNotFoundError there without this —
+# needed by supervisor.py's America/New_York market-hours calculation.
+tzdata>=2024.1

@@ -20,12 +20,14 @@ class Settings:
     # will, so it belongs in `.env`, not in a header on every request.
     jwt_secret: str | None
     database: str
+    tokens_database: str
 
 
 def load_settings() -> Settings:
     return Settings(
         jwt_secret=os.environ.get("OD_JWT_SECRET") or None,
         database=os.environ.get("OD_DATABASE", "data/od.db"),
+        tokens_database=os.environ.get("OD_TOKENS_DATABASE", "tokens.db"),
     )
 
 

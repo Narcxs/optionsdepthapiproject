@@ -1,20 +1,26 @@
-"""The "bot": mints a short-lived Bearer token for the data API.
+"""The "bot": mints a short-lived, individually revocable Bearer token.
 
-    python tools/generate_token.py                 # 1 hour, the default
-    python tools/generate_token.py --ttl 24h
-    python tools/generate_token.py --ttl 7d
-    python tools/generate_token.py --ttl 30m
+    python tools/generate_token.py alice                 # 1 hour, the default
+    python tools/generate_token.py alice --ttl 24h
+    python tools/generate_token.py bob --ttl 7d
+    python tools/generate_token.py myself --ttl 30m
+
+`name` is required: it is what `tools/list_tokens.py` and
+`tools/revoke_token.py` show and act on later ("cut off alice" is only
+possible if the token said, at creation, that it was alice's). It is
+not a secret and is not itself a credential — it is a label, stored
+alongside the token's id in `tokens.db` (`server/tokens_store.py`), not
+inside the signed payload's trust boundary.
 
 Prints the raw token to stdout — nothing else — so it is easy to use
 straight from a script:
 
-    TOKEN=$(python tools/generate_token.py --ttl 2h)
+    TOKEN=$(python tools/generate_token.py alice --ttl 2h)
     curl -H "Authorization: Bearer $TOKEN" https://your-vps/strikes/latest
 
 Signs with `OD_JWT_SECRET` (the same secret `server/auth.py` verifies
 against — see `server/config.py`), read from the environment or `.env`
-in the project root. Needs no network access and no running server: a
-valid token is just bytes signed with a secret both sides already have.
+in the project root.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import secrets
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,11 +37,15 @@ import jwt
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from console import use_utf8_console  # noqa: E402
 
 use_utf8_console()
+
+from server.config import settings  # noqa: E402
+from server.tokens_store import issue, open_tokens_db  # noqa: E402
 
 # The same two constants `server/auth.py` checks against: a token minted
 # with a different algorithm or audience would be rejected, so these
@@ -108,21 +119,30 @@ def load_secret() -> str:
     return secret
 
 
-def make_token(secret: str, ttl: timedelta) -> str:
+def make_token(secret: str, name: str, ttl: timedelta) -> tuple[str, str, datetime]:
+    """Returns `(token, jti, expires_at)`."""
     now = datetime.now(timezone.utc)
+    expires_at = now + ttl
+
+    # 128 bits, hex-encoded: unique enough that a collision is not a
+    # real concern, short enough to type by hand when revoking one.
+    jti = secrets.token_hex(16)
 
     payload = {
         "aud": AUDIENCE,
+        "sub": name,
+        "jti": jti,
         "iat": now,
-        "exp": now + ttl,
+        "exp": expires_at,
     }
 
-    return jwt.encode(payload, secret, algorithm=ALGORITHM)
+    return jwt.encode(payload, secret, algorithm=ALGORITHM), jti, expires_at
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 
+    parser.add_argument("name", help="who this token is for (shown by list_tokens.py)")
     parser.add_argument(
         "--ttl",
         default="1h",
@@ -140,13 +160,22 @@ def main(argv: list[str]) -> int:
 
     secret = load_secret()
 
-    token = make_token(secret, ttl)
+    token, jti, expires_at = make_token(secret, arguments.name, ttl)
+
+    connection = open_tokens_db(settings.tokens_database)
+
+    issue(connection, jti, arguments.name, expires_at.strftime("%Y-%m-%d %H:%M:%S"))
+
+    connection.close()
 
     print(token)
 
-    expires_at = datetime.now(timezone.utc) + ttl
-
-    print(f"   (expires {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC)", file=sys.stderr)
+    print(
+        f"   (for '{arguments.name}', jti {jti}, "
+        f"expires {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC — "
+        f"revoke with: python tools/revoke_token.py {jti})",
+        file=sys.stderr,
+    )
 
     return 0
 

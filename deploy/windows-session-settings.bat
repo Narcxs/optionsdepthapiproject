@@ -1,7 +1,6 @@
 @echo off
 REM Run this once, as Administrator, on the VPS — not on your own machine.
 REM Right-click the terminal icon, "Run as administrator", then:
-REM   cd C:\apps\od-scraper
 REM   deploy\windows-session-settings.bat
 REM
 REM What it does, and why:

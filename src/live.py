@@ -21,8 +21,13 @@ of the response is the fingerprint of its body.
 ## One pipeline at a time
 
 Several windows capture together, and each one wants to write to the same
-file. A lock serializes the whole chain: no interleaved rows, and no
-row deleted while another one is still reading it.
+file. `_pipeline_lock` serializes every write **and** the removal that
+follows it (`append_capture_locked`, `Live.handle`'s `remove_line`): no
+interleaved rows, and no row deleted while another one is still writing
+or reading it. File operations also retry briefly on a transient lock
+(`_retry_file_op`) — Windows can deny access for reasons outside this
+process (antivirus, indexing) even once the two writers here no longer
+race each other.
 
 Translation of `src/actions/live.rs` and `src/actions/network.rs`.
 """
@@ -32,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +122,30 @@ def left_in_capture(capture: str = CAPTURE_FILE) -> int:
     return len([line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()])
 
 
+def _retry_file_op(operation, attempts: int = 5, delay: float = 0.2):
+    """Retries a file operation a few times on a transient lock.
+
+    Windows can briefly deny access to a file for reasons this process
+    does not control — antivirus real-time scanning, search indexing, a
+    backup agent — on top of the race this module's own concurrent
+    windows can cause between each other (see `_pipeline_lock` and its
+    note below). Re-raises the last error if every attempt fails, so a
+    real, lasting problem still surfaces instead of being swallowed.
+    """
+    last_error: OSError | None = None
+
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except OSError as error:
+            last_error = error
+
+            if attempt < attempts - 1:
+                time.sleep(delay)
+
+    raise last_error
+
+
 def append_capture(record: dict[str, Any], capture: str = CAPTURE_FILE) -> str:
     """Writes the row into the capture file and returns it.
 
@@ -128,9 +158,12 @@ def append_capture(record: dict[str, Any], capture: str = CAPTURE_FILE) -> str:
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(line)
-        handle.flush()
+    def _write() -> None:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+            handle.flush()
+
+    _retry_file_op(_write)
 
     return line.strip()
 
@@ -173,7 +206,27 @@ def remove_line(raw: str, capture: str = CAPTURE_FILE) -> None:
 
     temporary.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
 
-    temporary.replace(path)
+    _retry_file_op(lambda: temporary.replace(path))
+
+
+def append_capture_locked(record: dict[str, Any], capture: str = CAPTURE_FILE) -> str:
+    """`append_capture`, serialized against `remove_line` on the same file.
+
+    The module docstring's "a lock serializes the whole chain" was only
+    half true: `remove_line` runs inside `_pipeline_lock` (via
+    `Live.handle`), but `append_capture` was called directly from the
+    event loop in `attach()`'s `consume()`, outside any lock. With one
+    window that race is invisible; with several windows capturing at
+    once (confirmed on a VPS running 5 dashboards + 2 pages) it is not:
+    Windows refused the rename inside `remove_line` with `WinError 5`
+    while a concurrent `append_capture` held the file open, and — the
+    more serious half — an `append_capture` failing outside any lock
+    dropped that response outright, with no retry and no row left
+    behind to pick back up, unlike every other failure path in this
+    module.
+    """
+    with _pipeline_lock:
+        return append_capture(record, capture)
 
 
 class Live:
@@ -304,7 +357,7 @@ async def attach(page: Any, window_name: str, targets: list[str], backend_host: 
             }
 
             try:
-                raw = append_capture(record, live.capture)
+                raw = await asyncio.to_thread(append_capture_locked, record, live.capture)
             except OSError as error:
                 print(f"❌ [{window_name}] I cannot write the capture ({error})")
 

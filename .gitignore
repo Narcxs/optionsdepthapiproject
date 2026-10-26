@@ -14,3 +14,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# Downloaded by deploy/install-caddy.bat — a binary, not source.
+deploy/caddy/
